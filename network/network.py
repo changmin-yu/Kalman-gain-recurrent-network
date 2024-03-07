@@ -10,9 +10,13 @@ class KalmanRecurrentNetwork:
         threshold: float = 1e-5, 
     ):
         
-        self.B = np.random.uniform(size=(D, D))
-        self.w = np.random.uniform(size=(2, ))
-    
+        # initialise parameters
+        # B = np.random.randn(D, D) * 0.1
+        # self.B = B + B.T
+        self.B = np.zeros((D, D))
+        self.w = np.zeros((2, ))
+
+        # initialise internal states in recurrent network
         self.y = np.zeros((D, ))
         
         self.learning_rate = learning_rate
@@ -20,8 +24,15 @@ class KalmanRecurrentNetwork:
         self.threshold = threshold
         
         self.converged = False
+    
+    def step(self, x: np.ndarray, r: float):
+        D = x.shape[-1]
+        self.y = np.matmul(np.linalg.inv(np.eye(D) - self.B), x)
         
-    def step(self, x: np.ndarray):
+        self.update_feedforward(r, x)
+        self.update_recurrent(x)
+        
+    def recurrent_step(self, x: np.ndarray):
         dy = (-self.y + x + self.B.dot(self.y)) / self.dt
         new_y = self.y + dy
         if np.sqrt(np.sum(np.square(new_y - self.y))) < self.threshold:
@@ -34,6 +45,7 @@ class KalmanRecurrentNetwork:
     def update_recurrent(self, x: np.ndarray):
         dB = -np.outer(x, self.y) + np.eye(x.shape[-1]) - self.B
         self.B += self.learning_rate * dB
+        self.B = 0.5 * (self.B + self.B.T)
     
     def update_feedforward(self, r: float, x: np.ndarray):
         dw = self.y * (r - np.dot(self.w, x)) # assume y has converged to y(\infty)
@@ -46,7 +58,6 @@ def train_network(
     learning_rate: float, 
     dt: float, 
     threshold: float = 1e-5, 
-    max_iters: int = 100, 
 ):
     N, D = x.shape
     network = KalmanRecurrentNetwork(D, learning_rate, dt, threshold)
@@ -55,12 +66,7 @@ def train_network(
     B_history = np.zeros((N, D, D))
     
     for i in range(N):
-        steps = 0
-        while not network.converged or steps < max_iters:
-            network.step(x[i])
-            steps += 1
-        
-        network.update_feedforward(r[i], x[i])
+        network.step(x[i], r[i])
         
         w_history[i] = network.w
         B_history[i] = network.B
